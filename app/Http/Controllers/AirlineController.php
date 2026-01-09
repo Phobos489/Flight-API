@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 use App\Models\Airline;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Storage;
 
 class AirlineController extends Controller
 {
@@ -35,8 +36,15 @@ class AirlineController extends Controller
         $sortOrder = $request->get('sort_order', 'asc');
         $query->orderBy($sortBy, $sortOrder);
 
-        // Ubah dari paginate() ke get()
         $airlines = $query->get();
+
+        // Add full URL for logo
+        $airlines->transform(function ($airline) {
+            if ($airline->logo_url && !filter_var($airline->logo_url, FILTER_VALIDATE_URL)) {
+                $airline->logo_url = asset('storage/' . $airline->logo_url);
+            }
+            return $airline;
+        });
 
         return response()->json([
             'success' => true,
@@ -53,12 +61,24 @@ class AirlineController extends Controller
         $validated = $request->validate([
             'code' => 'required|string|size:2|unique:airlines,code',
             'name' => 'required|string|max:255',
+            'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
             'logo_url' => 'nullable|url',
             'country' => 'nullable|string|max:100',
             'is_active' => 'boolean',
         ]);
 
+        // Handle logo upload
+        if ($request->hasFile('logo')) {
+            $logoPath = $request->file('logo')->store('airlines/logos', 'public');
+            $validated['logo_url'] = $logoPath;
+        }
+
         $airline = Airline::create($validated);
+
+        // Add full URL for response
+        if ($airline->logo_url && !filter_var($airline->logo_url, FILTER_VALIDATE_URL)) {
+            $airline->logo_url = asset('storage/' . $airline->logo_url);
+        }
 
         return response()->json([
             'success' => true,
@@ -78,6 +98,11 @@ class AirlineController extends Controller
                   ->limit(10);
         }]);
 
+        // Add full URL for logo
+        if ($airline->logo_url && !filter_var($airline->logo_url, FILTER_VALIDATE_URL)) {
+            $airline->logo_url = asset('storage/' . $airline->logo_url);
+        }
+
         return response()->json([
             'success' => true,
             'data' => $airline
@@ -92,12 +117,29 @@ class AirlineController extends Controller
         $validated = $request->validate([
             'code' => 'string|size:2|unique:airlines,code,' . $airline->id,
             'name' => 'string|max:255',
+            'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
             'logo_url' => 'nullable|url',
             'country' => 'nullable|string|max:100',
             'is_active' => 'boolean',
         ]);
 
+        // Handle logo upload
+        if ($request->hasFile('logo')) {
+            // Delete old logo if exists
+            if ($airline->logo_url && !filter_var($airline->logo_url, FILTER_VALIDATE_URL)) {
+                Storage::disk('public')->delete($airline->logo_url);
+            }
+            
+            $logoPath = $request->file('logo')->store('airlines/logos', 'public');
+            $validated['logo_url'] = $logoPath;
+        }
+
         $airline->update($validated);
+
+        // Add full URL for response
+        if ($airline->logo_url && !filter_var($airline->logo_url, FILTER_VALIDATE_URL)) {
+            $airline->logo_url = asset('storage/' . $airline->logo_url);
+        }
 
         return response()->json([
             'success' => true,
@@ -111,6 +153,11 @@ class AirlineController extends Controller
      */
     public function destroy(Airline $airline): JsonResponse
     {
+        // Delete logo if exists
+        if ($airline->logo_url && !filter_var($airline->logo_url, FILTER_VALIDATE_URL)) {
+            Storage::disk('public')->delete($airline->logo_url);
+        }
+
         $airline->delete();
 
         return response()->json([
